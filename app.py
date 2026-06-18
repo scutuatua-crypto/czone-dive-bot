@@ -36,6 +36,11 @@ RULES:
 4. For other questions (travel, weather etc) answer freely
 5. Always end with a call to action"""
 
+# Groq deprecated "llama3-8b-8192" — use a currently supported model instead.
+# See https://console.groq.com/docs/models for the up-to-date list.
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+
+
 @app.route("/webhook", methods=["GET"])
 def verify_webhook():
     mode = request.args.get("hub.mode")
@@ -44,6 +49,7 @@ def verify_webhook():
     if mode == "subscribe" and token == VERIFY_TOKEN:
         return challenge, 200
     return "Forbidden", 403
+
 
 @app.route("/webhook", methods=["POST"])
 def receive_message():
@@ -59,7 +65,12 @@ def receive_message():
                         send_message(sender_id, reply)
     return "OK", 200
 
+
 def generate_reply(user_message: str) -> str:
+    if not GROQ_API_KEY:
+        print("Groq error: GROQ_API_KEY is not set")
+        return "ขออภัยครับ ระบบมีปัญหาชั่วคราว กรุณาติดต่อ +66 81 231 4842 หรือ czonedive@gmail.com 🤿"
+
     try:
         response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -68,18 +79,34 @@ def generate_reply(user_message: str) -> str:
                 "Content-Type": "application/json"
             },
             json={
-                "model": "llama3-8b-8192",
+                "model": GROQ_MODEL,
                 "messages": [
                     {"role": "system", "content": BUSINESS_INFO},
                     {"role": "user", "content": user_message}
                 ],
                 "max_tokens": 300
-            }
+            },
+            timeout=20
         )
-        return response.json()["choices"][0]["message"]["content"]
+
+        data = response.json()
+
+        # If Groq returned an error payload, log the real reason instead of
+        # crashing on data["choices"] and printing a useless KeyError.
+        if "error" in data:
+            print(f"Groq API error ({response.status_code}): {data['error']}")
+            return "ขออภัยครับ ระบบมีปัญหาชั่วคราว กรุณาติดต่อ +66 81 231 4842 หรือ czonedive@gmail.com 🤿"
+
+        if not response.ok or "choices" not in data:
+            print(f"Groq unexpected response ({response.status_code}): {data}")
+            return "ขออภัยครับ ระบบมีปัญหาชั่วคราว กรุณาติดต่อ +66 81 231 4842 หรือ czonedive@gmail.com 🤿"
+
+        return data["choices"][0]["message"]["content"]
+
     except Exception as e:
         print(f"Groq error: {e}")
         return "ขออภัยครับ ระบบมีปัญหาชั่วคราว กรุณาติดต่อ +66 81 231 4842 หรือ czonedive@gmail.com 🤿"
+
 
 def send_message(recipient_id: str, text: str):
     url = "https://graph.facebook.com/v21.0/me/messages"
@@ -92,12 +119,16 @@ def send_message(recipient_id: str, text: str):
     try:
         r = requests.post(url, json=payload, params=params)
         print(f"Sent: {r.status_code}")
+        if not r.ok:
+            print(f"Send error body: {r.text}")
     except Exception as e:
         print(f"Send error: {e}")
+
 
 @app.route("/", methods=["GET"])
 def health():
     return jsonify({"status": "CZone Dive Bot running 🤿", "version": "2.0"})
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
