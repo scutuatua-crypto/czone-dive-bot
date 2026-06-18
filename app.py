@@ -37,8 +37,9 @@ RULES:
 5. Always end with a call to action"""
 
 # Groq deprecated "llama3-8b-8192" — use a currently supported model instead.
+# 70B gives noticeably better Thai spelling/grammar than the 8B "instant" model.
 # See https://console.groq.com/docs/models for the up-to-date list.
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 
 @app.route("/webhook", methods=["GET"])
