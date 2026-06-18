@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: czone-dive-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: VERIFY_TOKEN
+        value: czonedive_webhook_2025
+      - key: PAGE_ACCESS_TOKEN
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: APP_SECRET
+        sync: false
