@@ -82,7 +82,7 @@ def generate_reply(user_message: str) -> str:
                 "Content-Type": "application/json"
             },
             json={
-                "model": "llama3-8b-8192",
+                "model": "llama-3.1-8b-instant",
                 "messages": [
                     {"role": "system", "content": BUSINESS_INFO},
                     {"role": "user", "content": user_message}
@@ -90,9 +90,12 @@ def generate_reply(user_message: str) -> str:
                 "max_tokens": 300
             }
         )
-        return response.json()["choices"][0]["message"]["content"]
+        data = response.json()
+        print(f"Groq raw response: {data}")
+        return data["choices"][0]["message"]["content"]
     except Exception as e:
         print(f"Groq error: {e}")
+        print(f"Groq raw response: {response.text}")
         return "ขออภัยครับ ระบบมีปัญหาชั่วคราว กรุณาติดต่อ +66 81 231 4842 หรือ czonedive@gmail.com 🤿"
 
 def send_message(recipient_id: str, text: str):
@@ -111,7 +114,7 @@ def send_message(recipient_id: str, text: str):
 
 @app.route("/", methods=["GET"])
 def health():
-    return jsonify({"status": "CZone Dive Bot running 🤿", "version": "2.0"})
+    return jsonify({"status": "CZone Dive Bot running 🤿", "version": "2.1"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
