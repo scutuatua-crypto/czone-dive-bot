@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from flask import Flask, request, jsonify
 from threading import Thread
@@ -10,6 +11,11 @@ PAGE_ACCESS_TOKEN = os.environ.get("PAGE_ACCESS_TOKEN", "")
 GROQ_API_KEY      = os.environ.get("GROQ_API_KEY", "")
 
 processed_messages = set()
+
+# Human Takeover — เก็บเวลาที่แอดมินตอบล่าสุดต่อ conversation
+# { sender_id: timestamp }
+human_takeover = {}
+TAKEOVER_TIMEOUT = 5 * 60  # 5 นาที
 
 BUSINESS_INFO = """You are the CZone Dive assistant — a friendly, helpful bot for CZone Dive, 
 a SSI-certified scuba diving school located at Mae Haad pier, Koh Tao, Thailand.
@@ -91,27 +97,38 @@ def receive_message():
     if body.get("object") in ("page", "instagram"):
         for entry in body.get("entry", []):
             for event in entry.get("messaging", []):
-                # ข้าม echo message
-                if event.get("message", {}).get("is_echo"):
+                msg = event.get("message", {})
+                sender_id = event["sender"]["id"]
+                is_echo = msg.get("is_echo", False)
+
+                # ถ้าแอดมินตอบเอง (is_echo = True) → บันทึก takeover
+                if is_echo:
+                    human_takeover[sender_id] = time.time()
+                    print(f"Human takeover: {sender_id}")
                     continue
 
-                mid = event.get("message", {}).get("mid", "")
-                # dedup — ถ้าเคยตอบแล้วข้ามเลย
+                # เช็ค dedup
+                mid = msg.get("mid", "")
                 if mid and mid in processed_messages:
                     continue
                 if mid:
                     processed_messages.add(mid)
-                    # เก็บแค่ 1000 IDs ล่าสุด กัน memory leak
                     if len(processed_messages) > 1000:
                         processed_messages.pop()
 
-                sender_id = event["sender"]["id"]
-                text = event.get("message", {}).get("text", "")
-                if text:
-                    # ตอบใน background thread กัน timeout
-                    Thread(target=handle_message, args=(sender_id, text)).start()
+                text = msg.get("text", "")
+                if not text:
+                    continue
 
-    return "OK", 200  # return ทันทีก่อนเสมอ
+                # เช็ค Human Takeover — ถ้าแอดมินตอบใน 5 นาทีที่ผ่านมา bot หยุด
+                last_human = human_takeover.get(sender_id, 0)
+                if time.time() - last_human < TAKEOVER_TIMEOUT:
+                    print(f"Bot paused (human takeover active): {sender_id}")
+                    continue
+
+                Thread(target=handle_message, args=(sender_id, text)).start()
+
+    return "OK", 200
 
 def handle_message(sender_id: str, text: str):
     reply = generate_reply(text)
@@ -157,7 +174,7 @@ def send_message(recipient_id: str, text: str):
 
 @app.route("/", methods=["GET"])
 def health():
-    return jsonify({"status": "CZone Dive Bot running 🤿", "version": "2.4"})
+    return jsonify({"status": "CZone Dive Bot running 🤿", "version": "2.5"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
