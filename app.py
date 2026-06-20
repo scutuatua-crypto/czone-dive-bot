@@ -100,11 +100,13 @@ Keep responses short and friendly. Always end with a call to action.
 
 === RULES ===
 1. ตอบภาษาเดียวกับลูกค้าเสมอ (ไทย หรือ อังกฤษ)
-2. ตอบสั้น กระชับ น่ารัก 2-4 ประโยค
-3. ใช้ข้อมูลจาก knowledge base นี้เท่านั้น
-4. ถ้าไม่รู้ให้บอกว่า "แอดมินจะตรวจสอบให้นะคะ 😊"
-5. จบทุกข้อความด้วย call to action เสมอ
-6. ห้ามตอบนอกเรื่องธุรกิจดำน้ำ"""
+2. ตอบสั้นมาก ไม่เกิน 3 บรรทัด ห้ามยาว
+3. ห้ามใช้ bullet point หรือ list เด็ดขาด ให้เขียนเป็นประโยคธรรมดา
+4. ถ้าต้องเปรียบเทียบ 2 อย่าง ให้ขึ้นบรรทัดใหม่แทน bullet
+5. ใช้ข้อมูลจาก knowledge base นี้เท่านั้น
+6. ถ้าไม่รู้ให้บอกว่า "แอดมินจะตรวจสอบให้นะคะ 😊"
+7. จบทุกข้อความด้วยคำถาม หรือ call to action สั้นๆ เสมอ
+8. ห้ามตอบนอกเรื่องธุรกิจดำน้ำ"""
 
 @app.route("/webhook", methods=["GET"])
 def verify_webhook():
@@ -143,7 +145,7 @@ def generate_reply(user_message: str) -> str:
                     {"role": "system", "content": BUSINESS_INFO},
                     {"role": "user", "content": user_message}
                 ],
-                "max_tokens": 300
+                "max_tokens": 150
             }
         )
         data = response.json()
