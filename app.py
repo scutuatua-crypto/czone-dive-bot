@@ -1,14 +1,15 @@
 import os
 import requests
 from flask import Flask, request, jsonify
+from threading import Thread
 
 app = Flask(__name__)
-
-processed_messages = set()
 
 VERIFY_TOKEN      = os.environ.get("VERIFY_TOKEN", "czonedive_webhook_2025")
 PAGE_ACCESS_TOKEN = os.environ.get("PAGE_ACCESS_TOKEN", "")
 GROQ_API_KEY      = os.environ.get("GROQ_API_KEY", "")
+
+processed_messages = set()
 
 BUSINESS_INFO = """You are the CZone Dive assistant — a friendly, helpful bot for CZone Dive, 
 a SSI-certified scuba diving school located at Mae Haad pier, Koh Tao, Thailand.
@@ -63,14 +64,16 @@ a SSI-certified scuba diving school located at Mae Haad pier, Koh Tao, Thailand.
 
 === RULES ===
 1. ตอบภาษาเดียวกับลูกค้าเสมอ (ไทย หรือ อังกฤษ)
-2. ตอบสั้น ไม่เกิน 3-4 บรรทัด
-3. ใส่อีโมจิทุกบรรทัดเสมอ ให้ดูน่ารักและเป็นมิตร
-4. ห้ามใช้ bullet point หรือ "-" นำหน้า ให้ขึ้นบรรทัดใหม่แทน
-5. ห้ามพูดเรื่องจองหรือมัดจำ จนกว่าลูกค้าจะถามเองหรือบอกว่าสนใจจอง
-6. ห้ามใช้ประโยคแข็งๆ เช่น "แอดมินจะช่วยเหลือคุณ" ให้ใช้ภาษาที่เป็นกันเองแทน
-7. จบทุกข้อความด้วย "สอบถามเพิ่มเติมได้เลยนะคะ 😊" หรือคำถามสั้นๆ
-8. ถ้าไม่รู้ให้บอกว่า "แอดมินจะตรวจสอบให้นะคะ 😊"
-9. ห้ามตอบนอกเรื่องธุรกิจดำน้ำ"""
+2. ตอบสั้นมาก ไม่เกิน 3 บรรทัด ห้ามยาวเด็ดขาด
+3. ลูกค้าถามสั้น ตอบสั้น ลูกค้าถามยาว ตอบยาวขึ้นนิดหน่อย
+4. ห้ามใช้ bullet point หรือ "-" นำหน้าเด็ดขาด ให้ขึ้นบรรทัดใหม่แทน
+5. ใส่อีโมจิทุกบรรทัด ให้ดูน่ารักและเป็นกันเอง
+6. ห้ามพูดเรื่องจองหรือมัดจำ จนกว่าลูกค้าจะถามเองหรือบอกว่าสนใจจอง
+7. ห้ามใช้ภาษาแข็งๆ เป็นทางการ ให้ใช้ภาษาพูดสบายๆ
+8. จบทุกข้อความด้วย "สอบถามเพิ่มเติมได้เลยนะคะ 😊" หรือคำถามสั้นๆ
+9. ถ้าไม่รู้ให้บอกว่า "แอดมินจะตรวจสอบให้นะคะ 😊"
+10. ห้ามตอบนอกเรื่องธุรกิจดำน้ำ
+11. ห้ามใช้ภาษาอื่นนอกจากไทยหรืออังกฤษเด็ดขาด"""
 
 @app.route("/webhook", methods=["GET"])
 def verify_webhook():
@@ -84,16 +87,35 @@ def verify_webhook():
 @app.route("/webhook", methods=["POST"])
 def receive_message():
     body = request.get_json()
+
     if body.get("object") in ("page", "instagram"):
         for entry in body.get("entry", []):
             for event in entry.get("messaging", []):
-                if "message" in event and not event["message"].get("is_echo"):
-                    sender_id = event["sender"]["id"]
-                    text = event["message"].get("text", "")
-                    if text:
-                        reply = generate_reply(text)
-                        send_message(sender_id, reply)
-    return "OK", 200
+                # ข้าม echo message
+                if event.get("message", {}).get("is_echo"):
+                    continue
+
+                mid = event.get("message", {}).get("mid", "")
+                # dedup — ถ้าเคยตอบแล้วข้ามเลย
+                if mid and mid in processed_messages:
+                    continue
+                if mid:
+                    processed_messages.add(mid)
+                    # เก็บแค่ 1000 IDs ล่าสุด กัน memory leak
+                    if len(processed_messages) > 1000:
+                        processed_messages.pop()
+
+                sender_id = event["sender"]["id"]
+                text = event.get("message", {}).get("text", "")
+                if text:
+                    # ตอบใน background thread กัน timeout
+                    Thread(target=handle_message, args=(sender_id, text)).start()
+
+    return "OK", 200  # return ทันทีก่อนเสมอ
+
+def handle_message(sender_id: str, text: str):
+    reply = generate_reply(text)
+    send_message(sender_id, reply)
 
 def generate_reply(user_message: str) -> str:
     try:
@@ -104,7 +126,7 @@ def generate_reply(user_message: str) -> str:
                 "Content-Type": "application/json"
             },
             json={
-                "model": "llama-3.1-8b-instant",
+                "model": "llama-3.3-70b-versatile",
                 "messages": [
                     {"role": "system", "content": BUSINESS_INFO},
                     {"role": "user", "content": user_message}
@@ -117,7 +139,6 @@ def generate_reply(user_message: str) -> str:
         return data["choices"][0]["message"]["content"]
     except Exception as e:
         print(f"Groq error: {e}")
-        print(f"Groq raw response: {response.text}")
         return "ขออภัยค่ะ ระบบมีปัญหาชั่วคราว กรุณาติดต่อ +66 81 231 4842 หรือ czonedive@gmail.com 🤿"
 
 def send_message(recipient_id: str, text: str):
@@ -136,7 +157,7 @@ def send_message(recipient_id: str, text: str):
 
 @app.route("/", methods=["GET"])
 def health():
-    return jsonify({"status": "CZone Dive Bot running 🤿", "version": "2.3"})
+    return jsonify({"status": "CZone Dive Bot running 🤿", "version": "2.4"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
