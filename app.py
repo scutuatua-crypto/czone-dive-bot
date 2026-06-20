@@ -4,6 +4,8 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
+processed_messages = set()
+
 VERIFY_TOKEN      = os.environ.get("VERIFY_TOKEN", "czonedive_webhook_2025")
 PAGE_ACCESS_TOKEN = os.environ.get("PAGE_ACCESS_TOKEN", "")
 GROQ_API_KEY      = os.environ.get("GROQ_API_KEY", "")
